@@ -1,1 +1,701 @@
 # ReadAllNotificationsButton
+/**
+ * @name ReadAllNotificationsButton
+ * @author DevilBro
+ * @authorId 278543574059057154
+ * @version 1.8.5
+ * @description Adds a Clear Button to the Server List and the Mentions Popout
+ * @invite Jx3TjNS
+ * @donate https://www.paypal.me/MircoWittrien
+ * @patreon https://www.patreon.com/MircoWittrien
+ * @website https://mwittrien.github.io/
+ * @source https://github.com/mwittrien/BetterDiscordAddons/tree/master/Plugins/ReadAllNotificationsButton/
+ * @updateUrl https://mwittrien.github.io/BetterDiscordAddons/Plugins/ReadAllNotificationsButton/ReadAllNotificationsButton.plugin.js
+ */
+
+module.exports = (_ => {
+	const changeLog = {
+		
+	};
+
+	return !window.BDFDB_Global || (!window.BDFDB_Global.loaded && !window.BDFDB_Global.started) ? class {
+		constructor (meta) {for (let key in meta) this[key] = meta[key];}
+		getName () {return this.name;}
+		getAuthor () {return this.author;}
+		getVersion () {return this.version;}
+		getDescription () {return `The Library Plugin needed for ${this.name} is missing. Open the Plugin Settings to download it. \n\n${this.description}`;}
+		
+		downloadLibrary () {
+			BdApi.Net.fetch("https://mwittrien.github.io/BetterDiscordAddons/Library/0BDFDB.plugin.js").then(r => {
+				if (!r || r.status != 200) throw new Error();
+				else return r.text();
+			}).then(b => {
+				if (!b) throw new Error();
+				else return require("fs").writeFile(require("path").join(BdApi.Plugins.folder, "0BDFDB.plugin.js"), b, _ => BdApi.UI.showToast("Finished downloading BDFDB Library", {type: "success"}));
+			}).catch(error => {
+				BdApi.UI.alert("Error", "Could not download BDFDB Library Plugin. Try again later or download it manually from GitHub: https://mwittrien.github.io/downloader/?library");
+			});
+		}
+		
+		load () {
+			if (!window.BDFDB_Global || !Array.isArray(window.BDFDB_Global.pluginQueue)) window.BDFDB_Global = Object.assign({}, window.BDFDB_Global, {pluginQueue: []});
+			if (!window.BDFDB_Global.downloadModal) {
+				window.BDFDB_Global.downloadModal = true;
+				BdApi.UI.showConfirmationModal("Library Missing", `The Library Plugin needed for ${this.name} is missing. Please click "Download Now" to install it.`, {
+					confirmText: "Download Now",
+					cancelText: "Cancel",
+					onCancel: _ => {delete window.BDFDB_Global.downloadModal;},
+					onConfirm: _ => {
+						delete window.BDFDB_Global.downloadModal;
+						this.downloadLibrary();
+					}
+				});
+			}
+			if (!window.BDFDB_Global.pluginQueue.includes(this.name)) window.BDFDB_Global.pluginQueue.push(this.name);
+		}
+		start () {this.load();}
+		stop () {}
+		getSettingsPanel () {
+			let template = document.createElement("template");
+			template.innerHTML = `<div style="color: var(--text-strong); font-size: 16px; font-weight: 300; white-space: pre; line-height: 22px;">The Library Plugin needed for ${this.name} is missing.\nPlease click <a style="font-weight: 500;">Download Now</a> to install it.</div>`;
+			template.content.firstElementChild.querySelector("a").addEventListener("click", this.downloadLibrary);
+			return template.content.firstElementChild;
+		}
+	} : (([Plugin, BDFDB]) => {
+		var _this;
+		var blacklist, clearing;
+		
+		const ReadAllButtonComponent = class ReadAllButton extends BdApi.React.Component {
+			clearClick() {
+				if (_this.settings.batch.guilds) this.clearGuilds(_this.settings.batch.muted ? this.getGuilds() : this.getUnread());
+				if (_this.settings.batch.dms) BDFDB.DMUtils.markAsRead(this.getPingedDMs());
+			}
+			clearGuilds(guildIds) {
+				BDFDB.GuildUtils.markAsRead(guildIds.filter(id => id && !blacklist.includes(id)));
+			}
+			getGuilds() {
+				return BDFDB.LibraryStores.SortedGuildStore.getFlattenedGuildIds().map(BDFDB.LibraryStores.GuildStore.getGuild).map(g => g.id).filter(n => n);
+			}
+			getUnread() {
+				return this.getGuilds().filter(id => BDFDB.LibraryStores.GuildReadStateStore.hasUnread(id) || BDFDB.LibraryStores.GuildReadStateStore.getMentionCount(id) > 0);
+			}
+			getPinged() {
+				return this.getGuilds().filter(id => BDFDB.LibraryStores.GuildReadStateStore.getMentionCount(id) > 0);
+			}
+			getMuted() {
+				return this.getGuilds().filter(id => BDFDB.LibraryStores.UserGuildSettingsStore.isGuildOrCategoryOrChannelMuted(id));
+			}
+			getPingedDMs() {
+				return BDFDB.LibraryStores.ChannelStore.getSortedPrivateChannels().map(c => c.id).filter(id => id && BDFDB.LibraryStores.ReadStateStore.getMentionCount(id) > 0);
+			}
+			render() {
+				return BDFDB.ReactUtils.createElement("div", {
+					className: BDFDB.disCNS.guildouter + BDFDB.disCN._readallnotificationsbuttonframe,
+					children: BDFDB.ReactUtils.createElement("div", {
+						className: BDFDB.disCNS.guildiconwrapper + BDFDB.disCN._readallnotificationsbuttoninner,
+							children: BDFDB.ReactUtils.createElement("div", {
+							className: BDFDB.disCNS.guildiconchildwrapper + BDFDB.disCNS.guildiconchildwrappernohoverbg + BDFDB.disCN._readallnotificationsbuttonbutton,
+							children: "read all",
+							onClick: _ => {
+								if (!_this.settings.general.confirmClear) this.clearClick();
+								else BDFDB.ModalUtils.confirm(_this, _this.labels.modal_confirmnotifications, _ => this.clearClick());
+							},
+							onContextMenu: event => BDFDB.ContextMenuUtils.open(_this, event, BDFDB.ContextMenuUtils.createItem(BDFDB.LibraryComponents.MenuItems.MenuGroup, {
+								children: [
+									BDFDB.ContextMenuUtils.createItem(BDFDB.LibraryComponents.MenuItems.MenuItem, {
+										label: _this.labels.context_unreadguilds,
+										id: BDFDB.ContextMenuUtils.createItemId(_this.name, "mark-unread-read"),
+										action: _ => this.clearGuilds(this.getUnread())
+									}),
+									BDFDB.ContextMenuUtils.createItem(BDFDB.LibraryComponents.MenuItems.MenuItem, {
+										label: _this.labels.context_pingedguilds,
+										id: BDFDB.ContextMenuUtils.createItemId(_this.name, "mark-pinged-read"),
+										action: _ => this.clearGuilds(this.getPinged())
+									}),
+									BDFDB.ContextMenuUtils.createItem(BDFDB.LibraryComponents.MenuItems.MenuItem, {
+										label: _this.labels.context_mutedguilds,
+										id: BDFDB.ContextMenuUtils.createItemId(_this.name, "mark-muted-read"),
+										action: _ => this.clearGuilds(this.getMuted())
+									}),
+									BDFDB.ContextMenuUtils.createItem(BDFDB.LibraryComponents.MenuItems.MenuItem, {
+										label: _this.labels.context_guilds,
+										id: BDFDB.ContextMenuUtils.createItemId(_this.name, "mark-all-read"),
+										action: _ => this.clearGuilds(this.getGuilds())
+									}),
+									BDFDB.ContextMenuUtils.createItem(BDFDB.LibraryComponents.MenuItems.MenuItem, {
+										label: _this.labels.context_dms,
+										id: BDFDB.ContextMenuUtils.createItemId(_this.name, "mark-dms-read"),
+										action: _ => BDFDB.DMUtils.markAsRead(this.getPingedDMs())
+									})
+								]
+							}))
+						})
+					})
+				});
+			}
+		};
+	
+		return class ReadAllNotificationsButton extends Plugin {
+			onLoad () {
+				_this = this;
+				
+				this.defaults = {
+					general: {
+						addClearButton:		{value: true, 	description: "Adds a 'Clear Mentions' button to the recent mentions popout"},
+						confirmClear:		{value: false, 	description: "Asks for your confirmation before clearing reads"}
+					},
+					batch: {
+						guilds:			{value: true, 	description: "unread Servers"},
+						muted:			{value: false, 	description: "muted unread Servers"},
+						dms:			{value: false, 	description: "unread DMs"}
+					}
+				};
+			
+				this.modulePatches = {
+					after: [
+						"UnreadDMs",
+						"InboxHeader"
+					]
+				};
+				
+				this.css = `
+					${BDFDB.dotCN.messagespopouttabbar} {
+						flex: 1 0 auto;
+					}
+					${BDFDB.dotCN.messagespopoutcontrols} {
+						display: flex;
+					}
+					${BDFDB.dotCN.messagespopoutcontrols} > * {
+						margin-left: 10px;
+					}
+					${BDFDB.dotCN._readallnotificationsbuttonframe} {
+						--guildbar-avatar-size: 48px;
+					}
+					${BDFDB.dotCN._readallnotificationsbuttonframe}:active {
+						transform: translateY(1px);
+					}
+					#app-mount ${BDFDB.dotCN._readallnotificationsbuttonframe},
+					#app-mount ${BDFDB.dotCN._readallnotificationsbuttoninner},
+					#app-mount ${BDFDB.dotCN._readallnotificationsbuttonbutton} {
+						height: 24px;
+					}
+					${BDFDB.dotCN._readallnotificationsbuttonbutton} {
+						border-radius: 4px;
+						font-size: 12px;
+						line-height: 1.3;
+						white-space: nowrap;
+						cursor: pointer;
+					}
+				`;
+			}
+			
+			onStart () {
+				let loadedBlacklist = BDFDB.DataUtils.load(this, "blacklist");
+				this.saveBlacklist(!BDFDB.ArrayUtils.is(loadedBlacklist) ? [] : loadedBlacklist);
+
+				this.forceUpdateAll();
+			}
+			
+			onStop () {
+				this.forceUpdateAll();
+			}
+
+			getSettingsPanel (collapseStates = {}) {
+				let settingsPanel, settingsItems = [];
+				
+				settingsItems.push(BDFDB.ReactUtils.createElement(BDFDB.LibraryComponents.CollapseContainer, {
+					title: "Settings",
+					collapseStates: collapseStates,
+					children: Object.keys(this.defaults.general).map(key => BDFDB.ReactUtils.createElement(BDFDB.LibraryComponents.SettingsSaveItem, {
+						type: "Switch",
+						plugin: this,
+						keys: ["general", key],
+						label: this.defaults.general[key].description,
+						value: this.settings.general[key]
+					})).concat(BDFDB.ReactUtils.createElement(BDFDB.LibraryComponents.SettingsPanelList, {
+						title: "When left clicking the 'read all' Button mark following Elements as read:",
+						first: false,
+						last: true,
+						children: Object.keys(this.defaults.batch).map(key => BDFDB.ReactUtils.createElement(BDFDB.LibraryComponents.SettingsSaveItem, {
+							type: "Switch",
+							plugin: this,
+							keys: ["batch", key],
+							label: this.defaults.batch[key].description,
+							value: this.settings.batch[key]
+						}))
+					}))
+				}));
+				
+				let listInstance = null, batchSetGuilds = value => {
+					if (!value) {
+						for (let id of BDFDB.LibraryStores.SortedGuildStore.getFlattenedGuildIds()) blacklist.push(id);
+						blacklist = BDFDB.ArrayUtils.removeCopies(blacklist);
+					}
+					else blacklist = [];
+					this.saveBlacklist(blacklist);
+					if (listInstance) {
+						listInstance.props.disabled = blacklist;
+						BDFDB.ReactUtils.forceUpdate(listInstance);
+					}
+				};
+				settingsItems.push(BDFDB.ReactUtils.createElement(BDFDB.LibraryComponents.CollapseContainer, {
+					title: "Server Black List",
+					collapseStates: collapseStates,
+					children: [
+						BDFDB.ReactUtils.createElement(BDFDB.LibraryComponents.SettingsGuildList, {
+							className: BDFDB.disCN.marginbottom20,
+							disabled: BDFDB.DataUtils.load(this, "blacklist"),
+							onClick: disabledGuilds => this.saveBlacklist(disabledGuilds),
+							ref: instance => {listInstance = instance;}
+						}),
+						BDFDB.ReactUtils.createElement(BDFDB.LibraryComponents.SettingsItem, {
+							type: "Button",
+							color: BDFDB.LibraryComponents.Button.Colors.GREEN,
+							label: "Enable for all Servers",
+							onClick: _ => batchSetGuilds(true),
+							children: BDFDB.LanguageUtils.LanguageStrings.ENABLE
+						}),
+						BDFDB.ReactUtils.createElement(BDFDB.LibraryComponents.SettingsItem, {
+							type: "Button",
+							color: BDFDB.LibraryComponents.Button.Colors.PRIMARY,
+							label: "Disable for all Servers",
+							onClick: _ => batchSetGuilds(false),
+							children: BDFDB.LanguageUtils.LanguageStrings.DISABLE
+						})
+					]
+				}));
+				
+				return settingsPanel = BDFDB.PluginUtils.createSettingsPanel(this, settingsItems);
+			}
+
+			onSettingsClosed () {
+				if (this.SettingsUpdated) {
+					delete this.SettingsUpdated;
+					this.forceUpdateAll();
+				}
+			}
+		
+			forceUpdateAll () {
+				BDFDB.DiscordUtils.rerenderAll();
+			}
+			
+			processUnreadDMs (e) {
+				e.returnvalue = [e.returnvalue].flat(10);
+				e.returnvalue.push(BDFDB.ReactUtils.createElement(ReadAllButtonComponent, {}));
+			}
+
+			processInboxHeader (e) {
+				if (!this.settings.general.addClearButton || e.instance.props.tab != BDFDB.DiscordConstants.InboxTabs.MENTIONS) return;
+				let mentionedMessages = BDFDB.LibraryStores.RecentMentionsStore.getMentions();
+				if (!mentionedMessages || !mentionedMessages.length) return;
+				let controls = BDFDB.ReactUtils.findChild(e.returnvalue, {props: [["className", BDFDB.disCN.messagespopoutcontrols]]});
+				if (controls) controls.props.children = [
+					controls.props.children,
+					BDFDB.ReactUtils.createElement(BDFDB.LibraryComponents.TooltipContainer, {
+						text: `${BDFDB.LanguageUtils.LanguageStrings.CLOSE} (${BDFDB.LanguageUtils.LanguageStrings.ALL})`,
+						children: BDFDB.ReactUtils.createElement(BDFDB.LibraryComponents.Clickable, {
+							className: BDFDB.disCNS.messagespopoutbutton + BDFDB.disCNS.messagespopoutbuttonsm + BDFDB.disCN.messagespopoutbuttonsecondary,
+							children: BDFDB.ReactUtils.createElement("div", {
+								className: BDFDB.disCN.messagespopoutbuttonchildrenwrapper,
+								children: BDFDB.ReactUtils.createElement("div", {
+									className: BDFDB.disCN.messagespopoutbuttonchildren,
+									children: BDFDB.ReactUtils.createElement(BDFDB.LibraryComponents.SvgIcon, {
+										nativeClass: true,
+										name: BDFDB.LibraryComponents.SvgIcon.Names.CLOSE,
+										width: 16,
+										height: 16
+									})
+								})
+							}),
+							onClick: _ => {
+								let clear = _ => {
+									if (clearing) return BDFDB.NotificationUtils.toast(`${this.labels.toast_alreadyclearing} - ${BDFDB.LanguageUtils.LibraryStrings.please_wait}`, {type: "danger"});
+									let messages = [].concat(mentionedMessages).filter(n => n);
+									if (messages.length) {
+										clearing = true;
+										let toast = BDFDB.NotificationUtils.toast(`${this.labels.toast_clearing} - ${BDFDB.LanguageUtils.LibraryStrings.please_wait}`, {timeout: 0, ellipsis: true});
+										for (let i = 0; i < messages.length; i++) BDFDB.TimeUtils.timeout(_ => {
+											BDFDB.LibraryModules.HTTPUtils.del({
+												url: BDFDB.DiscordConstants.Endpoints.MENTIONS_MESSAGE_ID(messages[i].id),
+												retries: 2,
+												oldFormErrors: true
+											});
+											if (i == messages.length - 1) {
+												clearing = false;
+												toast.close();
+												BDFDB.NotificationUtils.toast(this.labels.toastcleared, {type: "success"});
+											}
+										}, i * 1000);
+									}
+								};
+								if (this.settings.general.confirmClear) BDFDB.ModalUtils.confirm(this, this.labels.modal_confirmmentions, clear);
+								else clear();
+							}
+						})
+					})
+				].flat(10);
+			}
+			
+			saveBlacklist (savedBlacklist) {
+				blacklist = savedBlacklist;
+				BDFDB.DataUtils.save(savedBlacklist, this, "blacklist");
+			}
+
+			setLabelsByLanguage () {
+				switch (BDFDB.LanguageUtils.getLanguage().id) {
+					case "bg":		// Bulgarian
+						return {
+							context_dms:					"Ð”Ð¸Ñ€ÐµÐºÑ‚Ð½Ð¾ ÑÑŠÐ¾Ð±Ñ‰ÐµÐ½Ð¸Ðµ",
+							context_guilds:					"Ð’ÑÐ¸Ñ‡ÐºÐ¸ ÑÑŠÑ€Ð²ÑŠÑ€Ð¸",
+							context_mutedguilds:				"ÐŸÑ€Ð¸Ð³Ð»ÑƒÑˆÐµÐ½Ð¸ ÑÑŠÑ€Ð²ÑŠÑ€Ð¸",
+							context_pingedguilds:				"Pinged ÑÑŠÑ€Ð²ÑŠÑ€Ð¸",
+							context_unreadguilds:				"ÐÐµÐ¿Ñ€Ð¾Ñ‡ÐµÑ‚ÐµÐ½Ð¸ ÑÑŠÑ€Ð²ÑŠÑ€Ð¸",
+							modal_confirmmentions:				"ÐÐ°Ð¸ÑÑ‚Ð¸Ð½Ð° Ð»Ð¸ Ð¸ÑÐºÐ°Ñ‚Ðµ Ð´Ð° Ð¸Ð·Ñ‚Ñ€Ð¸ÐµÑ‚Ðµ Ð²ÑÐ¸Ñ‡ÐºÐ¸ Ð½ÐµÐ¿Ñ€Ð¾Ñ‡ÐµÑ‚ÐµÐ½Ð¸ ÑÐ¿Ð¾Ð¼ÐµÐ½Ð°Ð²Ð°Ð½Ð¸Ñ?",
+							modal_confirmnotifications:			"ÐÐ°Ð¸ÑÑ‚Ð¸Ð½Ð° Ð»Ð¸ Ð¸ÑÐºÐ°Ñ‚Ðµ Ð´Ð° Ð¸Ð·Ñ‚Ñ€Ð¸ÐµÑ‚Ðµ Ð²ÑÐ¸Ñ‡ÐºÐ¸ Ð½ÐµÐ¿Ñ€Ð¾Ñ‡ÐµÑ‚ÐµÐ½Ð¸ Ð¸Ð·Ð²ÐµÑÑ‚Ð¸Ñ?",
+							toast_alreadyclearing:				"Ð˜Ð·Ñ‚Ñ€Ð¸Ð²Ð° Ð½ÑÐºÐ¾Ð¸ ÑÐ¿Ð¾Ð¼ÐµÐ½Ð°Ð²Ð°Ð½Ð¸Ñ Ð²ÐµÑ‡Ðµ",
+							toast_cleared:					"Ð’ÑÐ¸Ñ‡ÐºÐ¸ Ð¿Ð¾ÑÐ»ÐµÐ´Ð½Ð¸ ÑÐ¿Ð¾Ð¼ÐµÐ½Ð°Ð²Ð°Ð½Ð¸Ñ Ð±ÑÑ…Ð° Ð¸Ð·Ñ‚Ñ€Ð¸Ñ‚Ð¸",
+							toast_clearing:					"Ð˜Ð·Ñ‡Ð¸ÑÑ‚Ð²Ð° Ð²ÑÐ¸Ñ‡ÐºÐ¸ ÑÐºÐ¾Ñ€Ð¾ÑˆÐ½Ð¸ ÑÐ¿Ð¾Ð¼ÐµÐ½Ð°Ð²Ð°Ð½Ð¸Ñ"
+						};
+					case "da":		// Danish
+						return {
+							context_dms:					"Direkte beskeder",
+							context_guilds:					"Alle servere",
+							context_mutedguilds:				"DÃ¦mpede servere",
+							context_pingedguilds:				"Pingede servere",
+							context_unreadguilds:				"UlÃ¦ste servere",
+							modal_confirmmentions:				"Er du sikker pÃ¥, at du vil slette alle ulÃ¦ste omtaler?",
+							modal_confirmnotifications:			"Er du sikker pÃ¥, at du vil slette alle ulÃ¦ste meddelelser?",
+							toast_alreadyclearing:				"Sletter allerede nogle omtaler",
+							toast_cleared:					"Alle nylige omtaler er blevet slettet",
+							toast_clearing:					"Rydder alle nylige omtaler"
+						};
+					case "de":		// German
+						return {
+							context_dms:					"Direktnachrichten",
+							context_guilds:					"Alle Server",
+							context_mutedguilds:				"Stummgeschaltete Server",
+							context_pingedguilds:				"Gepingte Server",
+							context_unreadguilds:				"Ungelesene Server",
+							modal_confirmmentions:				"MÃ¶chten Sie wirklich alle ungelesenen ErwÃ¤hnungen lÃ¶schen?",
+							modal_confirmnotifications:			"MÃ¶chten Sie wirklich alle ungelesenen Benachrichtigungen lÃ¶schen?",
+							toast_alreadyclearing:				"LÃ¶scht bereits einige ErwÃ¤hnungen",
+							toast_cleared:					"Alle kÃ¼rzlich ErwÃ¤hnungen wurden gelÃ¶scht",
+							toast_clearing:					"LÃ¶scht alle letzten ErwÃ¤hnungen"
+						};
+					case "el":		// Greek
+						return {
+							context_dms:					"Î‘Î¼ÎµÏƒÎ± Î¼Î·Î½ÏÎ¼Î±Ï„Î±",
+							context_guilds:					"ÎŒÎ»Î¿Î¹ Î¿Î¹ Î´Î¹Î±ÎºÎ¿Î¼Î¹ÏƒÏ„Î­Ï‚",
+							context_mutedguilds:				"Î£Î¯Î³Î±ÏƒÎ· Î´Î¹Î±ÎºÎ¿Î¼Î¹ÏƒÏ„ÏŽÎ½",
+							context_pingedguilds:				"Î”Î¹Î±ÎºÎ¿Î¼Î¹ÏƒÏ„Î­Ï‚ Ping",
+							context_unreadguilds:				"ÎœÎ· Î±Î½Î±Î³Î½Ï‰ÏƒÎ¼Î­Î½Î¿Î¹ Î´Î¹Î±ÎºÎ¿Î¼Î¹ÏƒÏ„Î­Ï‚",
+							modal_confirmmentions:				"Î•Î¯ÏƒÏ„Îµ Î²Î­Î²Î±Î¹Î¿Î¹ ÏŒÏ„Î¹ Î¸Î­Î»ÎµÏ„Îµ Î½Î± Î´Î¹Î±Î³ÏÎ¬ÏˆÎµÏ„Îµ ÏŒÎ»ÎµÏ‚ Ï„Î¹Ï‚ Î¼Î· Î±Î½Î±Î³Î½Ï‰ÏƒÎ¼Î­Î½ÎµÏ‚ Î±Î½Î±Ï†Î¿ÏÎ­Ï‚;",
+							modal_confirmnotifications:			"Î•Î¯ÏƒÏ„Îµ Î²Î­Î²Î±Î¹Î¿Î¹ ÏŒÏ„Î¹ Î¸Î­Î»ÎµÏ„Îµ Î½Î± Î´Î¹Î±Î³ÏÎ¬ÏˆÎµÏ„Îµ ÏŒÎ»ÎµÏ‚ Ï„Î¹Ï‚ Î¼Î· Î±Î½Î±Î³Î½Ï‰ÏƒÎ¼Î­Î½ÎµÏ‚ ÎµÎ¹Î´Î¿Ï€Î¿Î¹Î®ÏƒÎµÎ¹Ï‚;",
+							toast_alreadyclearing:				"Î”Î¹Î±Î³ÏÎ¬Ï†ÎµÎ¹ Î®Î´Î· ÎºÎ¬Ï€Î¿Î¹ÎµÏ‚ Î±Î½Î±Ï†Î¿ÏÎ­Ï‚",
+							toast_cleared:					"ÎŒÎ»ÎµÏ‚ Î¿Î¹ Ï€ÏÏŒÏƒÏ†Î±Ï„ÎµÏ‚ Î±Î½Î±Ï†Î¿ÏÎ­Ï‚ Î­Ï‡Î¿Ï…Î½ Î´Î¹Î±Î³ÏÎ±Ï†ÎµÎ¯",
+							toast_clearing:					"Î”Î¹Î±Î³ÏÎ¬Ï†ÎµÎ¹ ÏŒÎ»ÎµÏ‚ Ï„Î¹Ï‚ Ï€ÏÏŒÏƒÏ†Î±Ï„ÎµÏ‚ Î±Î½Î±Ï†Î¿ÏÎ­Ï‚"
+						};
+					case "es":		// Spanish
+						return {
+							context_dms:					"Mensajes directos",
+							context_guilds:					"Todos los servidores",
+							context_mutedguilds:				"Servidores silenciados",
+							context_pingedguilds:				"Servidores con ping",
+							context_unreadguilds:				"Servidores no leÃ­dos",
+							modal_confirmmentions:				"Â¿EstÃ¡s seguro de que deseas eliminar todas las menciones no leÃ­das?",
+							modal_confirmnotifications:			"Â¿EstÃ¡ seguro de que desea eliminar todas las notificaciones no leÃ­das?",
+							toast_alreadyclearing:				"Elimina algunas menciones ya",
+							toast_cleared:					"Se han eliminado todas las menciones recientes",
+							toast_clearing:					"Borra todas las menciones recientes"
+						};
+					case "fi":		// Finnish
+						return {
+							context_dms:					"Suorat viestit",
+							context_guilds:					"Kaikki palvelimet",
+							context_mutedguilds:				"Mykistetyt palvelimet",
+							context_pingedguilds:				"Pinged-palvelimet",
+							context_unreadguilds:				"Lukemattomat palvelimet",
+							modal_confirmmentions:				"Haluatko varmasti poistaa kaikki lukemattomat maininnat?",
+							modal_confirmnotifications:			"Haluatko varmasti poistaa kaikki lukemattomat ilmoitukset?",
+							toast_alreadyclearing:				"Poistaa jo joitain mainintoja",
+							toast_cleared:					"Kaikki viimeisimmÃ¤t maininnat on poistettu",
+							toast_clearing:					"TyhjentÃ¤Ã¤ kaikki viimeisimmÃ¤t maininnat"
+						};
+					case "fr":		// French
+						return {
+							context_dms:					"Messages directs",
+							context_guilds:					"Tous les serveurs",
+							context_mutedguilds:				"Serveurs muets",
+							context_pingedguilds:				"Serveurs ping",
+							context_unreadguilds:				"Serveurs non lus",
+							modal_confirmmentions:				"Voulez-vous vraiment supprimer toutes les mentions non lues?",
+							modal_confirmnotifications:			"Voulez-vous vraiment supprimer toutes les notifications non lues?",
+							toast_alreadyclearing:				"Supprime dÃ©jÃ  certaines mentions",
+							toast_cleared:					"Toutes les mentions rÃ©centes ont Ã©tÃ© supprimÃ©es",
+							toast_clearing:					"Efface toutes les mentions rÃ©centes"
+						};
+					case "hr":		// Croatian
+						return {
+							context_dms:					"Direktna poruka",
+							context_guilds:					"Svi posluÅ¾itelji",
+							context_mutedguilds:				"PriguÅ¡eni posluÅ¾itelji",
+							context_pingedguilds:				"Pingirani posluÅ¾itelji",
+							context_unreadguilds:				"NeproÄitani posluÅ¾itelji",
+							modal_confirmmentions:				"Jeste li sigurni da Å¾elite izbrisati sva neproÄitana spominjanja?",
+							modal_confirmnotifications:			"Jeste li sigurni da Å¾elite izbrisati sve neproÄitane obavijesti?",
+							toast_alreadyclearing:				"BriÅ¡e veÄ‡ spomenute",
+							toast_cleared:					"Sva nedavna spominjanja su izbrisana",
+							toast_clearing:					"BriÅ¡e sva nedavna spominjanja"
+						};
+					case "hu":		// Hungarian
+						return {
+							context_dms:					"KÃ¶zvetlen Ã¼zenet",
+							context_guilds:					"Minden szerver",
+							context_mutedguilds:				"NÃ©mÃ­tott szerverek",
+							context_pingedguilds:				"Pingelt szerverek",
+							context_unreadguilds:				"Olvasatlan szerverek",
+							modal_confirmmentions:				"Biztosan tÃ¶rli az Ã¶sszes olvasatlan emlÃ­tÃ©st?",
+							modal_confirmnotifications:			"Biztosan tÃ¶rli az Ã¶sszes olvasatlan Ã©rtesÃ­tÃ©st?",
+							toast_alreadyclearing:				"NÃ©hÃ¡ny emlÃ­tÃ©st mÃ¡r tÃ¶rÃ¶l",
+							toast_cleared:					"Az Ã¶sszes kÃ¶zelmÃºltbeli emlÃ­tÃ©st tÃ¶rÃ¶ltÃ©k",
+							toast_clearing:					"TÃ¶rli az Ã¶sszes kÃ¶zelmÃºltbeli emlÃ­tÃ©st"
+						};
+					case "it":		// Italian
+						return {
+							context_dms:					"Messaggi diretti",
+							context_guilds:					"Tutti i server",
+							context_mutedguilds:				"Server disattivati",
+							context_pingedguilds:				"Server sottoposti a ping",
+							context_unreadguilds:				"Server non letti",
+							modal_confirmmentions:				"Sei sicuro di voler eliminare tutte le menzioni non lette?",
+							modal_confirmnotifications:			"Sei sicuro di voler eliminare tutte le notifiche non lette?",
+							toast_alreadyclearing:				"Elimina giÃ  alcune menzioni",
+							toast_cleared:					"Tutte le menzioni recenti sono state eliminate",
+							toast_clearing:					"Cancella tutte le menzioni recenti"
+						};
+					case "ja":		// Japanese
+						return {
+							context_dms:					"ãƒ€ã‚¤ãƒ¬ã‚¯ãƒˆãƒ¡ãƒƒã‚»ãƒ¼ã‚¸",
+							context_guilds:					"ã™ã¹ã¦ã®ã‚µãƒ¼ãƒãƒ¼",
+							context_mutedguilds:				"ãƒŸãƒ¥ãƒ¼ãƒˆã•ã‚ŒãŸã‚µãƒ¼ãƒãƒ¼",
+							context_pingedguilds:				"pingã•ã‚ŒãŸã‚µãƒ¼ãƒãƒ¼",
+							context_unreadguilds:				"æœªèª­ã‚µãƒ¼ãƒãƒ¼",
+							modal_confirmmentions:				"æœªèª­ã®ãƒ¡ãƒ³ã‚·ãƒ§ãƒ³ã‚’ã™ã¹ã¦å‰Šé™¤ã—ã¦ã‚‚ã‚ˆã‚ã—ã„ã§ã™ã‹ï¼Ÿ",
+							modal_confirmnotifications:			"æœªèª­ã®é€šçŸ¥ã‚’ã™ã¹ã¦å‰Šé™¤ã—ã¦ã‚‚ã‚ˆã‚ã—ã„ã§ã™ã‹ï¼Ÿ",
+							toast_alreadyclearing:				"ã™ã§ã«ã„ãã¤ã‹ã®è¨€åŠã‚’å‰Šé™¤ã—ã¾ã™",
+							toast_cleared:					"æœ€è¿‘ã®è¨€åŠã¯ã™ã¹ã¦å‰Šé™¤ã•ã‚Œã¾ã—ãŸ",
+							toast_clearing:					"æœ€è¿‘ã®è¨€åŠã‚’ã™ã¹ã¦ã‚¯ãƒªã‚¢ã—ã¾ã™"
+						};
+					case "ko":		// Korean
+						return {
+							context_dms:					"ìª½ì§€",
+							context_guilds:					"ëª¨ë“  ì„œë²„",
+							context_mutedguilds:				"ìŒì†Œê±° ëœ ì„œë²„",
+							context_pingedguilds:				"í•‘ëœ ì„œë²„",
+							context_unreadguilds:				"ì½ì§€ ì•Šì€ ì„œë²„",
+							modal_confirmmentions:				"ì½ì§€ ì•Šì€ ëª¨ë“  ë©˜ì…˜ì„ ì‚­ì œ í•˜ì‹œê² ìŠµë‹ˆê¹Œ?",
+							modal_confirmnotifications:			"ì½ì§€ ì•Šì€ ëª¨ë“  ì•Œë¦¼ì„ ì‚­ì œ í•˜ì‹œê² ìŠµë‹ˆê¹Œ?",
+							toast_alreadyclearing:				"ì´ë¯¸ ì¼ë¶€ ë©˜ì…˜ì„ ì‚­ì œí•©ë‹ˆë‹¤.",
+							toast_cleared:					"ëª¨ë“  ìµœê·¼ ë©˜ì…˜ì´ ì‚­ì œë˜ì—ˆìŠµë‹ˆë‹¤.",
+							toast_clearing:					"ìµœê·¼ ë©˜ì…˜ì„ ëª¨ë‘ ì§€ ì›ë‹ˆë‹¤."
+						};
+					case "lt":		// Lithuanian
+						return {
+							context_dms:					"Tiesioginiai praneÅ¡imai",
+							context_guilds:					"Visi serveriai",
+							context_mutedguilds:				"Nutildyti serveriai",
+							context_pingedguilds:				"â€žPingedâ€œ serveriai",
+							context_unreadguilds:				"Neskaityti serveriai",
+							modal_confirmmentions:				"Ar tikrai norite iÅ¡trinti visus neperskaitytus paminÄ—jimus?",
+							modal_confirmnotifications:			"Ar tikrai norite iÅ¡trinti visus neperskaitytus praneÅ¡imus?",
+							toast_alreadyclearing:				"Kai kurie paminÄ—jimai jau iÅ¡trinami",
+							toast_cleared:					"Visi naujausi paminÄ—jimai buvo iÅ¡trinti",
+							toast_clearing:					"IÅ¡valo visus naujausius paminÄ—jimus"
+						};
+					case "nl":		// Dutch
+						return {
+							context_dms:					"Directe berichten",
+							context_guilds:					"Alle servers",
+							context_mutedguilds:				"Gedempte servers",
+							context_pingedguilds:				"Gepingde servers",
+							context_unreadguilds:				"Ongelezen servers",
+							modal_confirmmentions:				"Weet u zeker dat u alle ongelezen vermeldingen wilt verwijderen?",
+							modal_confirmnotifications:			"Weet u zeker dat u alle ongelezen meldingen wilt verwijderen?",
+							toast_alreadyclearing:				"Verwijdert al enkele vermeldingen",
+							toast_cleared:					"Alle recente vermeldingen zijn verwijderd",
+							toast_clearing:					"Wist alle recente vermeldingen"
+						};
+					case "no":		// Norwegian
+						return {
+							context_dms:					"Direktemeldinger",
+							context_guilds:					"Alle servere",
+							context_mutedguilds:				"Dempede servere",
+							context_pingedguilds:				"Pingede servere",
+							context_unreadguilds:				"Uleste servere",
+							modal_confirmmentions:				"Er du sikker pÃ¥ at du vil slette alle uleste omtaler?",
+							modal_confirmnotifications:			"Er du sikker pÃ¥ at du vil slette alle uleste varsler?",
+							toast_alreadyclearing:				"Sletter allerede noen omtaler",
+							toast_cleared:					"Alle nylige omtaler er slettet",
+							toast_clearing:					"Fjerner alle nylige omtaler"
+						};
+					case "pl":		// Polish
+						return {
+							context_dms:					"BezpoÅ›rednie wiadomoÅ›ci",
+							context_guilds:					"Wszystkie serwery",
+							context_mutedguilds:				"Wyciszone serwery",
+							context_pingedguilds:				"Serwery pingowane",
+							context_unreadguilds:				"Nieprzeczytane serwery",
+							modal_confirmmentions:				"Czy na pewno chcesz usunÄ…Ä‡ wszystkie nieprzeczytane wzmianki?",
+							modal_confirmnotifications:			"Czy na pewno chcesz usunÄ…Ä‡ wszystkie nieprzeczytane powiadomienia?",
+							toast_alreadyclearing:				"Usuwa juÅ¼ niektÃ³re wzmianki",
+							toast_cleared:					"Wszystkie ostatnie wzmianki zostaÅ‚y usuniÄ™te",
+							toast_clearing:					"Usuwa wszystkie ostatnie wzmianki"
+						};
+					case "pt-BR":	// Portuguese (Brazil)
+						return {
+							context_dms:					"Mensagens diretas",
+							context_guilds:					"Todos os servidores",
+							context_mutedguilds:				"Servidores Silenciados",
+							context_pingedguilds:				"Servidores com ping",
+							context_unreadguilds:				"Servidores nÃ£o lidos",
+							modal_confirmmentions:				"Tem certeza de que deseja excluir todas as menÃ§Ãµes nÃ£o lidas?",
+							modal_confirmnotifications:			"Tem certeza de que deseja excluir todas as notificaÃ§Ãµes nÃ£o lidas?",
+							toast_alreadyclearing:				"Exclui algumas menÃ§Ãµes jÃ¡",
+							toast_cleared:					"Todas as menÃ§Ãµes recentes foram excluÃ­das",
+							toast_clearing:					"Limpa todas as menÃ§Ãµes recentes"
+						};
+					case "ro":		// Romanian
+						return {
+							context_dms:					"Mesaje directe",
+							context_guilds:					"Toate serverele",
+							context_mutedguilds:				"Servere mutate",
+							context_pingedguilds:				"Servere pinged",
+							context_unreadguilds:				"Servere necitite",
+							modal_confirmmentions:				"Sigur doriÈ›i sÄƒ È™tergeÈ›i toate menÈ›iunile necitite?",
+							modal_confirmnotifications:			"Sigur doriÈ›i sÄƒ È™tergeÈ›i toate notificÄƒrile necitite?",
+							toast_alreadyclearing:				"È˜terge deja cÃ¢teva menÈ›iuni",
+							toast_cleared:					"Toate menÈ›iunile recente au fost È™terse",
+							toast_clearing:					"È˜terge toate menÈ›iunile recente"
+						};
+					case "ru":		// Russian
+						return {
+							context_dms:					"ÐŸÑ€ÑÐ¼Ñ‹Ðµ ÑÐ¾Ð¾Ð±Ñ‰ÐµÐ½Ð¸Ñ",
+							context_guilds:					"Ð’ÑÐµ ÑÐµÑ€Ð²ÐµÑ€Ñ‹",
+							context_mutedguilds:				"ÐžÑ‚ÐºÐ»ÑŽÑ‡ÐµÐ½Ð½Ñ‹Ðµ ÑÐµÑ€Ð²ÐµÑ€Ñ‹",
+							context_pingedguilds:				"ÐŸÑ€Ð¾Ð²ÐµÑ€ÐµÐ½Ð½Ñ‹Ðµ ÑÐµÑ€Ð²ÐµÑ€Ñ‹",
+							context_unreadguilds:				"ÐÐµÐ¿Ñ€Ð¾Ñ‡Ð¸Ñ‚Ð°Ð½Ð½Ñ‹Ðµ ÑÐµÑ€Ð²ÐµÑ€Ñ‹",
+							modal_confirmmentions:				"Ð’Ñ‹ ÑƒÐ²ÐµÑ€ÐµÐ½Ñ‹, Ñ‡Ñ‚Ð¾ Ñ…Ð¾Ñ‚Ð¸Ñ‚Ðµ ÑƒÐ´Ð°Ð»Ð¸Ñ‚ÑŒ Ð²ÑÐµ Ð½ÐµÐ¿Ñ€Ð¾Ñ‡Ð¸Ñ‚Ð°Ð½Ð½Ñ‹Ðµ ÑƒÐ¿Ð¾Ð¼Ð¸Ð½Ð°Ð½Ð¸Ñ?",
+							modal_confirmnotifications:			"Ð’Ñ‹ Ð´ÐµÐ¹ÑÑ‚Ð²Ð¸Ñ‚ÐµÐ»ÑŒÐ½Ð¾ Ñ…Ð¾Ñ‚Ð¸Ñ‚Ðµ ÑƒÐ´Ð°Ð»Ð¸Ñ‚ÑŒ Ð²ÑÐµ Ð½ÐµÐ¿Ñ€Ð¾Ñ‡Ð¸Ñ‚Ð°Ð½Ð½Ñ‹Ðµ ÑƒÐ²ÐµÐ´Ð¾Ð¼Ð»ÐµÐ½Ð¸Ñ?",
+							toast_alreadyclearing:				"Ð£Ð´Ð°Ð»ÑÐµÑ‚ ÑƒÐ¶Ðµ Ð½ÐµÐºÐ¾Ñ‚Ð¾Ñ€Ñ‹Ðµ ÑƒÐ¿Ð¾Ð¼Ð¸Ð½Ð°Ð½Ð¸Ñ",
+							toast_cleared:					"Ð’ÑÐµ Ð½ÐµÐ´Ð°Ð²Ð½Ð¸Ðµ ÑƒÐ¿Ð¾Ð¼Ð¸Ð½Ð°Ð½Ð¸Ñ Ð±Ñ‹Ð»Ð¸ ÑƒÐ´Ð°Ð»ÐµÐ½Ñ‹",
+							toast_clearing:					"Ð£Ð´Ð°Ð»ÑÐµÑ‚ Ð²ÑÐµ Ð½ÐµÐ´Ð°Ð²Ð½Ð¸Ðµ ÑƒÐ¿Ð¾Ð¼Ð¸Ð½Ð°Ð½Ð¸Ñ"
+						};
+					case "sv":		// Swedish
+						return {
+							context_dms:					"Direktmeddelanden",
+							context_guilds:					"Alla servrar",
+							context_mutedguilds:				"DÃ¤mpade servrar",
+							context_pingedguilds:				"Pingade servrar",
+							context_unreadguilds:				"OlÃ¤sta servrar",
+							modal_confirmmentions:				"Ã„r du sÃ¤ker pÃ¥ att du vill ta bort alla olÃ¤sta omnÃ¤mnanden?",
+							modal_confirmnotifications:			"Ã„r du sÃ¤ker pÃ¥ att du vill ta bort alla olÃ¤sta aviseringar?",
+							toast_alreadyclearing:				"Raderar nÃ¥gra omnÃ¤mnanden redan",
+							toast_cleared:					"Alla nya omnÃ¤mnanden har tagits bort",
+							toast_clearing:					"Rensar alla senaste omnÃ¤mnanden"
+						};
+					case "th":		// Thai
+						return {
+							context_dms:					"à¸‚à¹‰à¸­à¸„à¸§à¸²à¸¡à¹‚à¸”à¸¢à¸•à¸£à¸‡",
+							context_guilds:					"à¹€à¸‹à¸´à¸£à¹Œà¸Ÿà¹€à¸§à¸­à¸£à¹Œà¸—à¸±à¹‰à¸‡à¸«à¸¡à¸”",
+							context_mutedguilds:				"à¹€à¸‹à¸´à¸£à¹Œà¸Ÿà¹€à¸§à¸­à¸£à¹Œà¸—à¸µà¹ˆà¸›à¸´à¸”à¹€à¸ªà¸µà¸¢à¸‡",
+							context_pingedguilds:				"à¹€à¸‹à¸´à¸£à¹Œà¸Ÿà¹€à¸§à¸­à¸£à¹Œ Pinged",
+							context_unreadguilds:				"à¹€à¸‹à¸´à¸£à¹Œà¸Ÿà¹€à¸§à¸­à¸£à¹Œà¸—à¸µà¹ˆà¸¢à¸±à¸‡à¹„à¸¡à¹ˆà¹„à¸”à¹‰à¸­à¹ˆà¸²à¸™",
+							modal_confirmmentions:				"à¹à¸™à¹ˆà¹ƒà¸ˆà¹„à¸«à¸¡à¸§à¹ˆà¸²à¸•à¹‰à¸­à¸‡à¸à¸²à¸£à¸¥à¸šà¸‚à¹‰à¸­à¸„à¸§à¸²à¸¡à¸—à¸µà¹ˆà¸¢à¸±à¸‡à¹„à¸¡à¹ˆà¹„à¸”à¹‰à¸­à¹ˆà¸²à¸™à¸—à¸±à¹‰à¸‡à¸«à¸¡à¸”",
+							modal_confirmnotifications:			"à¹à¸™à¹ˆà¹ƒà¸ˆà¹„à¸«à¸¡à¸§à¹ˆà¸²à¸•à¹‰à¸­à¸‡à¸à¸²à¸£à¸¥à¸šà¸à¸²à¸£à¹à¸ˆà¹‰à¸‡à¹€à¸•à¸·à¸­à¸™à¸—à¸µà¹ˆà¸¢à¸±à¸‡à¹„à¸¡à¹ˆà¹„à¸”à¹‰à¸­à¹ˆà¸²à¸™à¸—à¸±à¹‰à¸‡à¸«à¸¡à¸”",
+							toast_alreadyclearing:				"à¸¥à¸šà¸à¸²à¸£à¸à¸¥à¹ˆà¸²à¸§à¸–à¸¶à¸‡à¸šà¸²à¸‡à¸ªà¹ˆà¸§à¸™à¹à¸¥à¹‰à¸§",
+							toast_cleared:					"à¸¥à¸šà¸à¸²à¸£à¸à¸¥à¹ˆà¸²à¸§à¸–à¸¶à¸‡à¸¥à¹ˆà¸²à¸ªà¸¸à¸”à¸—à¸±à¹‰à¸‡à¸«à¸¡à¸”à¹à¸¥à¹‰à¸§",
+							toast_clearing:					"à¸¥à¹‰à¸²à¸‡à¸à¸²à¸£à¸žà¸¹à¸”à¸–à¸¶à¸‡à¸¥à¹ˆà¸²à¸ªà¸¸à¸”à¸—à¸±à¹‰à¸‡à¸«à¸¡à¸”"
+						};
+					case "tr":		// Turkish
+						return {
+							context_dms:					"Direkt Mesajlar",
+							context_guilds:					"TÃ¼m Sunucular",
+							context_mutedguilds:				"Sessiz Sunucular",
+							context_pingedguilds:				"Ping GÃ¶nderilen Sunucular",
+							context_unreadguilds:				"OkunmamÄ±ÅŸ Sunucular",
+							modal_confirmmentions:				"OkunmamÄ±ÅŸ tÃ¼m bahisleri silmek istediÄŸinizden emin misiniz?",
+							modal_confirmnotifications:			"OkunmamÄ±ÅŸ tÃ¼m bildirimleri silmek istediÄŸinizden emin misiniz?",
+							toast_alreadyclearing:				"Zaten bazÄ± bahsetmeleri siler",
+							toast_cleared:					"Son bahsedenlerin tÃ¼mÃ¼ silindi",
+							toast_clearing:					"TÃ¼m son bahsedilenleri temizler"
+						};
+					case "uk":		// Ukrainian
+						return {
+							context_dms:					"ÐŸÑ€ÑÐ¼Ñ– Ð¿Ð¾Ð²Ñ–Ð´Ð¾Ð¼Ð»ÐµÐ½Ð½Ñ",
+							context_guilds:					"Ð£ÑÑ– ÑÐµÑ€Ð²ÐµÑ€Ð¸",
+							context_mutedguilds:				"ÐŸÑ€Ð¸Ð³Ð»ÑƒÑˆÐµÐ½Ñ– ÑÐµÑ€Ð²ÐµÑ€Ð¸",
+							context_pingedguilds:				"Pinged ÑÐµÑ€Ð²ÐµÑ€Ð¸",
+							context_unreadguilds:				"ÐÐµÐ¿Ñ€Ð¾Ñ‡Ð¸Ñ‚Ð°Ð½Ñ– ÑÐµÑ€Ð²ÐµÑ€Ð¸",
+							modal_confirmmentions:				"Ð’Ð¸ Ð²Ð¿ÐµÐ²Ð½ÐµÐ½Ñ–, Ñ‰Ð¾ Ñ…Ð¾Ñ‡ÐµÑ‚Ðµ Ð²Ð¸Ð´Ð°Ð»Ð¸Ñ‚Ð¸ Ð²ÑÑ– Ð½ÐµÐ¿Ñ€Ð¾Ñ‡Ð¸Ñ‚Ð°Ð½Ñ– Ð·Ð³Ð°Ð´ÐºÐ¸?",
+							modal_confirmnotifications:			"Ð’Ð¸ Ð²Ð¿ÐµÐ²Ð½ÐµÐ½Ñ–, Ñ‰Ð¾ Ñ…Ð¾Ñ‡ÐµÑ‚Ðµ Ð²Ð¸Ð´Ð°Ð»Ð¸Ñ‚Ð¸ Ð²ÑÑ– Ð½ÐµÐ¿Ñ€Ð¾Ñ‡Ð¸Ñ‚Ð°Ð½Ñ– ÑÐ¿Ð¾Ð²Ñ–Ñ‰ÐµÐ½Ð½Ñ?",
+							toast_alreadyclearing:				"Ð’Ð¸Ð´Ð°Ð»ÑÑ” Ð´ÐµÑÐºÑ– Ð·Ð³Ð°Ð´ÐºÐ¸ Ð²Ð¶Ðµ",
+							toast_cleared:					"Ð£ÑÑ– Ð¾ÑÑ‚Ð°Ð½Ð½Ñ– Ð·Ð³Ð°Ð´ÑƒÐ²Ð°Ð½Ð½Ñ Ð±ÑƒÐ»Ð¸ Ð²Ð¸Ð´Ð°Ð»ÐµÐ½Ñ–",
+							toast_clearing:					"ÐžÑ‡Ð¸Ñ‰Ð°Ñ” Ð²ÑÑ– Ð¾ÑÑ‚Ð°Ð½Ð½Ñ– Ð·Ð³Ð°Ð´ÑƒÐ²Ð°Ð½Ð½Ñ"
+						};
+					case "vi":		// Vietnamese
+						return {
+							context_dms:					"Tin nháº¯n trá»±c tiáº¿p",
+							context_guilds:					"Táº¥t cáº£ mÃ¡y chá»§",
+							context_mutedguilds:				"MÃ¡y chá»§ bá»‹ táº¯t tiáº¿ng",
+							context_pingedguilds:				"MÃ¡y chá»§ Pinged",
+							context_unreadguilds:				"MÃ¡y chá»§ chÆ°a Ä‘á»c",
+							modal_confirmmentions:				"Báº¡n cÃ³ cháº¯c cháº¯n muá»‘n xÃ³a táº¥t cáº£ cÃ¡c Ä‘á» cáº­p chÆ°a Ä‘á»c khÃ´ng?",
+							modal_confirmnotifications:			"Báº¡n cÃ³ cháº¯c cháº¯n muá»‘n xÃ³a táº¥t cáº£ cÃ¡c thÃ´ng bÃ¡o chÆ°a Ä‘á»c khÃ´ng?",
+							toast_alreadyclearing:				"ÄÃ£ xÃ³a má»™t sá»‘ Ä‘á» cáº­p",
+							toast_cleared:					"Táº¥t cáº£ cÃ¡c Ä‘á» cáº­p gáº§n Ä‘Ã¢y Ä‘Ã£ bá»‹ xÃ³a",
+							toast_clearing:					"XÃ³a táº¥t cáº£ cÃ¡c Ä‘á» cáº­p gáº§n Ä‘Ã¢y"
+						};
+					case "zh-CN":	// Chinese (China)
+						return {
+							context_dms:					"ç›´æŽ¥è®¯æ¯",
+							context_guilds:					"æ‰€æœ‰æœåŠ¡å™¨",
+							context_mutedguilds:				"é™éŸ³æœåŠ¡å™¨",
+							context_pingedguilds:				"ç»‘å®šæœåŠ¡å™¨",
+							context_unreadguilds:				"æœªè¯»æœåŠ¡å™¨",
+							modal_confirmmentions:				"æ‚¨ç¡®å®šè¦åˆ é™¤æ‰€æœ‰æœªè¯»çš„æåŠå—ï¼Ÿ",
+							modal_confirmnotifications:			"æ‚¨ç¡®å®šè¦åˆ é™¤æ‰€æœ‰æœªè¯»çš„é€šçŸ¥å—ï¼Ÿ",
+							toast_alreadyclearing:				"å·²åˆ é™¤ä¸€äº›æåŠ",
+							toast_cleared:					"æœ€è¿‘æ‰€æœ‰æåŠçš„å†…å®¹å‡å·²åˆ é™¤",
+							toast_clearing:					"æ¸…é™¤æ‰€æœ‰æœ€è¿‘æåŠçš„å†…å®¹"
+						};
+					case "zh-TW":	// Chinese (Taiwan)
+						return {
+							context_dms:					"ç›´æŽ¥è¨Šæ¯",
+							context_guilds:					"æ‰€æœ‰æœå‹™å™¨",
+							context_mutedguilds:				"éœéŸ³æœå‹™å™¨",
+							context_pingedguilds:				"ç¶å®šæœå‹™å™¨",
+							context_unreadguilds:				"æœªè®€æœå‹™å™¨",
+							modal_confirmmentions:				"æ‚¨ç¢ºå®šè¦åˆªé™¤æ‰€æœ‰æœªè®€çš„æåŠå—Žï¼Ÿ",
+							modal_confirmnotifications:			"æ‚¨ç¢ºå®šè¦åˆªé™¤æ‰€æœ‰æœªè®€çš„é€šçŸ¥å—Žï¼Ÿ",
+							toast_alreadyclearing:				"å·²åˆªé™¤ä¸€äº›æåŠ",
+							toast_cleared:					"æœ€è¿‘æ‰€æœ‰æåŠçš„å…§å®¹å‡å·²åˆªé™¤",
+							toast_clearing:					"æ¸…é™¤æ‰€æœ‰æœ€è¿‘æåŠçš„å…§å®¹"
+						};
+					default:		// English
+						return {
+							context_dms:					"Direct Messages",
+							context_guilds:					"All Servers",
+							context_mutedguilds:				"Muted Servers",
+							context_pingedguilds:				"Pinged Servers",
+							context_unreadguilds:				"Unread Servers",
+							modal_confirmmentions:				"Are you sure you want to delete all unread Mentions?",
+							modal_confirmnotifications:			"Are you sure you want to delete all unread Notifications?",
+							toast_alreadyclearing:				"Already clearing some Mentions",
+							toast_cleared:					"All recent Mentions have been cleared",
+							toast_clearing:					"Clearing all recent Mentions"
+						};
+				}
+			}
+		};
+	})(window.BDFDB_Global.PluginUtils.buildPlugin(changeLog));
+})();
